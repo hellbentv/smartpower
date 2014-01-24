@@ -1,0 +1,16 @@
+    awk -F "," '
+      BEGIN { first = 1;}
+      {
+         v += $2; a += $3; w+=$4
+         if (first) {vm=$2;am=$3;wm=$4;}
+         else {if ($2>vm){vm=$2};if ($3>am){am=$3};if ($4>wm){wm=$4};}
+      } 
+      END {
+        if (NR > 0) 
+          print "AVG_Volts " v/NR " pass"
+          print "MAX_Volts " vm " pass"
+          print "AVG_Amps " a/NR " pass"
+          print "MAX_Amps " am " pass"
+          print "AVG_Watts " w/NR " pass"
+          print "MAX_Watts " wm " pass"
+      }' /tmp/testlog
