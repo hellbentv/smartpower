@@ -132,10 +132,11 @@ static void smartp_csv(unsigned char *data, size_t len, unsigned int start)
 
 #define SMARTP_READ_MAX 100000
 
-static int smartp_read(int fd, unsigned char *buf, size_t len)
+static int smartp_read(int fd, unsigned char *buf, size_t len, int* powerstatus)
 {
 	int rc = -1;
 	int i;
+        *powerstatus=0;
 
 	memset(buf, 0, len);
 
@@ -160,6 +161,7 @@ static int smartp_read(int fd, unsigned char *buf, size_t len)
 		}
 		break;
 	case 0x81:
+                *powerstatus = buf[2];
 		printf("Power %s, record %s\n",
 			buf[2] == 0 ? "off" : "on",
 			buf[1] == 0 ? "off" : "on");
@@ -195,6 +197,7 @@ static int smartp_toggle_record(int fd)
 	int rc;
 	unsigned char cmd[2] = { 0x00, FLG_STARTSTOP, };
 	unsigned char buf[3];
+        int powerstatus;
 
 	rc = smartp_send(fd, cmd, sizeof(cmd));
 	if (rc < 0)
@@ -206,15 +209,15 @@ static int smartp_toggle_record(int fd)
 	if (rc < 0)
 		return rc;
 
-	return smartp_read(fd, buf, sizeof(buf));
+	return smartp_read(fd, buf, sizeof(buf), &powerstatus);
 }
 
-static int smartp_toggle_power(int fd)
+static int smartp_toggle_power(int fd, int* powerstatus)
 {
 	int rc;
 	unsigned char cmd[2] = { 0x00, FLG_ONOFF, };
 	unsigned char buf[3];
-
+        
 	rc = smartp_send(fd, cmd, sizeof(cmd));
 	if (rc < 0)
 		return rc;
@@ -226,7 +229,7 @@ static int smartp_toggle_power(int fd)
 		return rc;
 
 	usleep(100000); /* wait status update; time gained experimentally */
-	return smartp_read(fd, buf, sizeof(buf));
+	return smartp_read(fd, buf, sizeof(buf),powerstatus);
 }
 
 #define MAX_VERSION 17
@@ -236,13 +239,14 @@ static int smartp_version(int fd)
 	int rc;
 	unsigned char buf[MAX_VERSION];
 	unsigned char cmd[2] = { 0x00, FLG_VERSION, };
+	int powerstatus; 
 
 	rc = smartp_send(fd, cmd, sizeof(cmd));
 	if (rc < 0)
 		return rc;
 
 	memset(buf, 0, sizeof(buf));
-	return smartp_read(fd, buf, sizeof(buf));
+	return smartp_read(fd, buf, sizeof(buf), &powerstatus);
 }
 
 #define MAX_DATA 34
@@ -252,13 +256,14 @@ static int smartp_getdata(int fd)
 	int rc;
 	unsigned char buf[MAX_DATA];
 	unsigned char cmd[2] = { 0x00, FLG_DATA, };
+        int powerstatus;
 
 	rc = smartp_send(fd, cmd, sizeof(cmd));
 	if (rc < 0)
 		return rc;
 
 	memset(buf, 0, sizeof(buf));
-	return smartp_read(fd, buf, sizeof(buf));
+	return smartp_read(fd, buf, sizeof(buf), &powerstatus);
 }
 
 #define SMARTP_VENDOR	0x04d8
@@ -356,6 +361,8 @@ static void help(const char *name)
 	printf("Options:\n");
 	printf("  -h, --help         print this message\n");
 	printf("  -p, --power        toggle power supply on/off\n");
+	printf("  -o, --on           turn power on\n");
+	printf("  -x, --off          turn power off\n");
 	printf("  -r, --record       toggle power consumption recording\n");
 	printf("  -v, --verbose      print hidraw details\n");
 	printf("  -k, --kernel	     dmesg like time stamps\n");
@@ -372,10 +379,11 @@ static int opt(const char *arg, const char *args, const char *argl)
 int main(int argc, char **argv)
 {
 	int fd;
-	int i, samples = 0;
+	int i, samples = 0, value=0;
 	const char *dev = NULL;
 	const char *arg;
 	int power = 0, record = 0, verbose = 0;
+        int rc, off = 0, on = 0;
 
 	for (i = 0; i < argc; i++) {
 		arg = argv[i];
@@ -392,6 +400,14 @@ int main(int argc, char **argv)
 		if (opt(arg, "-p", "--power")) {
 			power = 1;
 			continue;
+		}
+		if (opt(arg, "-o", "--on")) {
+			on = 1;
+		        continue; 
+		}
+		if (opt(arg, "-x", "--off")) {
+			off = 1;
+  			continue; 
 		}
 		if (opt(arg, "-r", "--record")) {
 			record = 1;
@@ -435,8 +451,24 @@ int main(int argc, char **argv)
 	if (record == 1)
 		return smartp_toggle_record(fd);
 
-	if (power == 1)
-		return smartp_toggle_power(fd);
+	if (power == 1) 
+		return smartp_toggle_power(fd, &value); 
+        
+	if (on == 1){
+		rc = smartp_toggle_power(fd, &value);
+		if (value == 0){
+			rc = smartp_toggle_power(fd, &value);
+		}
+		return (rc);
+	}
+
+	if (off == 1){
+		rc = smartp_toggle_power(fd, &value);
+		if (value == 1){
+			rc = smartp_toggle_power(fd, &value);
+		}
+		return (rc);
+	}
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
